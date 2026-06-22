@@ -25,7 +25,12 @@ sentence-transformers      # CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2'
 # API
 fastapi==0.111.0
 uvicorn==0.30.0
-pydantic-settings==2.0.0
+# pydantic-settings==2.0.0
 
 # Observability
-langfuse==2.0.0            # tracing & eval (free tier)
+langfuse==2.0.1          # tracing & eval (free tier)
+
+#additional 
+lxml==5.2.0
+pydantic-settings==2.3.0
+python-dotenv==1.0.0
