@@ -1,0 +1,6 @@
+.env
+uploads/
+index_store/
+__pycache__/
+tests/
+*.pyc

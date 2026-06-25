@@ -1,0 +1,40 @@
+# Version control
+.git
+.gitignore
+
+# Python artifacts
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+dist/
+build/
+
+# Virtual environments
+.venv
+venv
+env
+
+# Secrets — never bake into image
+.env
+
+# Data — mounted as volumes at runtime
+uploads/
+index_store/
+
+# Dev/test artifacts
+tests/
+*.log
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db

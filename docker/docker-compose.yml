@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  rag-api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: hybrid-rag-api
+    ports:
+      - "8000:7860"       # local:container — access via localhost:8000
+    env_file:
+      - ../.env
+    environment:
+      # Override Ollama URL so container can reach host machine
+      # On Linux replace with: http://172.17.0.1:11434
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      PORT: "7860"
+    volumes:
+      # Persist uploads and indexes across container restarts
+      - ../uploads:/app/uploads
+      - ../index_store:/app/index_store
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
