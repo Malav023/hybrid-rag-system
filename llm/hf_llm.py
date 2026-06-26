@@ -60,6 +60,7 @@ class HuggingFaceLLM:
         try:
             from huggingface_hub import InferenceClient
             client = InferenceClient(model=model, token=self.hf_token)
+            logger.info(f"InferenceClient created, calling chat_completion...")
 
             response = client.chat_completion(
                 messages=messages,
@@ -67,17 +68,18 @@ class HuggingFaceLLM:
                 temperature=self.temperature,
                 stop=["QUESTION:", "CONTEXT:", "\n\nContext", "Question:"],
             )
+            logger.info(f"chat_completion returned successfully")
             raw_answer = response.choices[0].message.content.strip()
 
-            # Clean up in case model still prefixes "Answer:" or "ANSWER:"
+            # Clean up prefix if model adds "Answer:" anyway
             for prefix in ["Answer:", "ANSWER:", "answer:"]:
                 if raw_answer.startswith(prefix):
                     raw_answer = raw_answer[len(prefix):].strip()
                     break
 
         except Exception as exc:
-            logger.error(f"HF inference failed: {exc}")
-            raise ConnectionError(f"HF Inference API error: {exc}") from exc
+            logger.error(f"HF inference failed: {type(exc).__name__}: {exc}")
+            raise ConnectionError(f"HF Inference API error: {type(exc).__name__}: {exc}") from exc
 
         grounded = raw_answer != "NOT_IN_CONTEXT"
         sources = self._extract_sources(chunks) if grounded else []

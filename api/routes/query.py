@@ -21,17 +21,6 @@ def query_rag(
     request: QueryRequest,
     rag_pipeline=Depends(get_rag_pipeline),
 ):
-    """
-    Submit a natural language question against the indexed documents.
-
-    The pipeline runs:
-    1. Hybrid retrieval (dense + sparse → RRF fusion)
-    2. CrossEncoder reranking
-    3. Local LLM generation (grounded, no hallucination)
-
-    If the answer is not in the indexed context, `grounded` will be `false`
-    and `answer` will be `"NOT_IN_CONTEXT"`.
-    """
     logger.info(
         f"Query received | q='{request.question[:80]}' "
         f"top_k_retrieve={request.top_k_retrieve} "
@@ -48,12 +37,10 @@ def query_rag(
             use_7b=request.use_7b,
         )
     except ConnectionError as exc:
-        # Ollama is down
-        logger.error(f"Ollama unreachable: {exc}")
+        logger.error(f"LLM backend unreachable: {exc}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="LLM backend (Ollama) is not reachable. "
-                   "Ensure Ollama is running: `ollama serve`",
+            detail=f"LLM backend error: {exc}",
         ) from exc
     except Exception as exc:
         logger.exception("Unexpected error during RAG query")
