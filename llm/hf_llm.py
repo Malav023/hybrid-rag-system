@@ -1,25 +1,21 @@
 """
 Hugging Face Inference API LLM client.
-Drop-in replacement for GroqLLM / OllamaLLM.
+Uses huggingface_hub InferenceClient which works inside HF Spaces
+via internal routing (no external DNS needed).
 
-Free models that work without gating:
-  - HuggingFaceH4/zephyr-7b-beta          (recommended, no approval needed)
-  - mistralai/Mistral-7B-Instruct-v0.3    (no approval needed)
-  - microsoft/Phi-3-mini-4k-instruct      (lightweight, fast)
+Free models (no approval required):
+  - HuggingFaceH4/zephyr-7b-beta
+  - mistralai/Mistral-7B-Instruct-v0.3
+  - microsoft/Phi-3-mini-4k-instruct
 """
 
-import json
 import logging
-import urllib.error
-import urllib.request
 from typing import Any, Dict, List, Optional
 
 from llm.prompt import build_messages
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
-
-HF_API_URL = "https://api-inference.huggingface.co/models/{model}/v1/chat/completions"
 
 
 class HuggingFaceLLM:
@@ -35,6 +31,14 @@ class HuggingFaceLLM:
                 "HF_TOKEN is not set. Add it as a secret in your HF Space settings."
             )
 
+        # Import here so startup fails fast if huggingface_hub is missing
+        from huggingface_hub import InferenceClient
+        self._client = InferenceClient(
+            model=self.model,
+            token=self.hf_token,
+        )
+        logger.info(f"HuggingFaceLLM ready — model: {self.model}")
+
     def answer(
         self,
         query: str,
@@ -48,38 +52,26 @@ class HuggingFaceLLM:
         model = model_override or self.model
         messages = build_messages(query, chunks)
 
-        payload = {
-            "model": model,
-            "messages": messages,
-            "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
-            "stream": False,
-        }
-
-        logger.info(f"Sending query to HF Inference [{model}] — {len(chunks)} chunks in context")
+        logger.info(
+            f"Sending query to HF Inference [{model}] — "
+            f"{len(chunks)} chunks in context"
+        )
 
         try:
-            raw_answer = self._post(payload, model)
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            logger.error(f"HF API HTTP {exc.code}: {body}")
-            if exc.code == 401:
-                raise ConnectionError("HF_TOKEN is invalid or expired.") from exc
-            if exc.code == 403:
-                raise ConnectionError(
-                    f"Model '{model}' is gated or requires approval. "
-                    "Switch HF_MODEL to HuggingFaceH4/zephyr-7b-beta in Space secrets."
-                ) from exc
-            if exc.code == 503:
-                raise ConnectionError(
-                    "HF model is loading (cold start). Retry in 20-30 seconds."
-                ) from exc
-            raise ConnectionError(f"HF API error {exc.code}: {body}") from exc
-        except urllib.error.URLError as exc:
-            logger.error(f"HF API connection failed: {exc}")
-            raise ConnectionError(f"Cannot reach HF Inference API: {exc}") from exc
+            from huggingface_hub import InferenceClient
+            client = InferenceClient(model=model, token=self.hf_token)
 
-        raw_answer = raw_answer.strip()
+            response = client.chat_completion(
+                messages=messages,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+            )
+            raw_answer = response.choices[0].message.content.strip()
+
+        except Exception as exc:
+            logger.error(f"HF inference failed: {exc}")
+            raise ConnectionError(f"HF Inference API error: {exc}") from exc
+
         grounded = raw_answer != "NOT_IN_CONTEXT"
         sources = self._extract_sources(chunks) if grounded else []
 
@@ -94,44 +86,21 @@ class HuggingFaceLLM:
         }
 
     def health_check(self) -> bool:
+        """
+        Use a simple token check instead of a live inference call.
+        Avoids cold-start delays at startup.
+        """
         if not self.hf_token:
             return False
         try:
-            payload = {
-                "model": self.model,
-                "messages": [{"role": "user", "content": "hi"}],
-                "max_tokens": 1,
-                "temperature": 0,
-                "stream": False,
-            }
-            self._post(payload, self.model)
+            from huggingface_hub import HfApi
+            api = HfApi(token=self.hf_token)
+            api.whoami()   # lightweight auth check, no model call
+            logger.info("HF token verified via whoami()")
             return True
-        except urllib.error.HTTPError as exc:
-            # 503 = model cold start — token is valid, treat as healthy
-            if exc.code == 503:
-                logger.warning("HF model cold start (503) — treating as healthy.")
-                return True
-            logger.error(f"HF health check failed: HTTP {exc.code}")
-            return False
         except Exception as exc:
             logger.error(f"HF health check failed: {exc}")
             return False
-
-    def _post(self, payload: Dict[str, Any], model: str) -> str:
-        url = HF_API_URL.format(model=model)
-        body = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=body,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.hf_token}",
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        return data["choices"][0]["message"]["content"]
 
     def _extract_sources(self, chunks: List[Dict[str, Any]]) -> List[str]:
         if not chunks:
@@ -149,7 +118,9 @@ class HuggingFaceLLM:
                     sources.append(src)
         return sources
 
-    def _not_in_context(self, query: str, model: str, chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _not_in_context(
+        self, query: str, model: str, chunks: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
         return {
             "answer":      "NOT_IN_CONTEXT",
             "sources":     [],

@@ -34,3 +34,5 @@ langfuse==2.0.1          # tracing & eval (free tier)
 lxml==5.2.0
 pydantic-settings==2.3.0
 python-dotenv==1.0.0
+
+huggingface_hub>=0.23.0
