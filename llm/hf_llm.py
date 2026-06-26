@@ -65,8 +65,15 @@ class HuggingFaceLLM:
                 messages=messages,
                 max_tokens=self.max_tokens,
                 temperature=self.temperature,
+                stop=["QUESTION:", "CONTEXT:", "\n\nContext", "Question:"],
             )
             raw_answer = response.choices[0].message.content.strip()
+
+            # Clean up in case model still prefixes "Answer:" or "ANSWER:"
+            for prefix in ["Answer:", "ANSWER:", "answer:"]:
+                if raw_answer.startswith(prefix):
+                    raw_answer = raw_answer[len(prefix):].strip()
+                    break
 
         except Exception as exc:
             logger.error(f"HF inference failed: {exc}")

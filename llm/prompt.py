@@ -1,13 +1,16 @@
 from typing import List, Dict, Any
 
-SYSTEM_PROMPT = """You are a document question-answering assistant.
-Answer the question using ONLY the information in the context chunks below.
-Rules:
-- Reply with a concise, direct answer only.
-- Do NOT repeat or quote the source headers (e.g. "[1] Source: ...").
-- Do NOT restate the context or the question.
-- If the context does not contain the answer, reply with exactly: NOT_IN_CONTEXT
-- Do not use any outside knowledge."""
+SYSTEM_PROMPT = """You are a strict document QA assistant. Your only job is to answer the question using the context provided. 
+
+STRICT RULES:
+- Answer in one or two sentences maximum.
+- Use ONLY information from the context below.
+- If the context does not contain the answer, reply with exactly the word: NOT_IN_CONTEXT
+- Do NOT generate more questions.
+- Do NOT repeat the context.
+- Do NOT add explanations.
+- Just answer."""
+
 
 def build_context_block(chunks: List[Dict[str, Any]]) -> str:
     lines = []
@@ -38,13 +41,19 @@ def build_context_block(chunks: List[Dict[str, Any]]) -> str:
 def build_messages(query: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     context_block = build_context_block(chunks)
 
-    user_message = (
-        f"Context:\n{context_block}\n"
-        f"Question: {query}\n"
-        f"Answer (use ONLY the context, or reply NOT_IN_CONTEXT):"
-    )
+    # For Zephyr and similar models, fold system prompt into user turn
+    # This prevents the model from treating the exchange as a few-shot template
+    combined_user_message = f"""{SYSTEM_PROMPT}
+
+CONTEXT:
+{context_block}
+
+QUESTION: {query}
+
+ANSWER (one or two sentences only, or NOT_IN_CONTEXT):"""
 
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user",   "content": user_message},
+        {"role": "user", "content": combined_user_message},
+        # Prime the assistant turn so model completes from here, not generates Q&A
+        {"role": "assistant", "content": ""},
     ]
