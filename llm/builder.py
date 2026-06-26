@@ -9,11 +9,19 @@ logger = logging.getLogger(__name__)
 
 
 def _build_llm():
-    """
-    Factory that returns the correct LLM client based on LLM_BACKEND.
-    Falls back to Ollama automatically if Groq key is missing.
-    """
     backend = settings.LLM_BACKEND.lower()
+
+    if backend == "huggingface":
+        if not settings.HF_TOKEN:
+            logger.warning(
+                "LLM_BACKEND=huggingface but HF_TOKEN is not set. "
+                "Falling back to Ollama."
+            )
+            backend = "ollama"
+        else:
+            from llm.hf_llm import HuggingFaceLLM
+            logger.info("LLM backend: HuggingFace Inference API")
+            return HuggingFaceLLM()
 
     if backend == "groq":
         if not settings.GROQ_API_KEY:
@@ -34,7 +42,7 @@ def _build_llm():
 
     raise ValueError(
         f"Unknown LLM_BACKEND='{settings.LLM_BACKEND}'. "
-        f"Must be 'groq' or 'ollama'."
+        f"Must be 'groq', 'ollama', or 'huggingface'."
     )
 
 

@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
 
     # LLM Backend — "groq" (default) or "ollama" (fallback)
-    LLM_BACKEND: Literal["groq", "ollama"] = "groq"
+    LLM_BACKEND: Literal["groq", "ollama", "huggingface"] = "huggingface"
 
     # Groq
     GROQ_API_KEY: str = ""
@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     OLLAMA_TIMEOUT: int = 120
     OLLAMA_MAX_TOKENS: int = 512
     OLLAMA_TEMPERATURE: float = 0.1
+
+    # HF Inference API
+    HF_TOKEN: str = ""
+    HF_MODEL: str = "HuggingFaceH4/zephyr-7b-beta"
+    HF_MAX_TOKENS: int = 512
+    HF_TEMPERATURE: float = 0.1
 
     # Retrieval
     RETRIEVER_TOP_K: int = 15
