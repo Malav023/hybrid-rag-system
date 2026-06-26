@@ -111,18 +111,20 @@ class GroqLLM:
 
     def health_check(self) -> bool:
         """
-        Groq has no lightweight ping endpoint.
-        We verify the key is set and make a minimal models list call.
+        Verify Groq is reachable by making a minimal inference call.
+        The /models endpoint returns 403 on free tier so we use a 1-token ping instead.
         """
         if not self.api_key:
             return False
         try:
-            req = urllib.request.Request(
-                "https://api.groq.com/openai/v1/models",
-                headers={"Authorization": f"Bearer {self.api_key}"},
-            )
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                return resp.status == 200
+            payload = {
+                "model": self.model,
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 1,
+                "temperature": 0,
+            }
+            self._post(payload)
+            return True
         except Exception as exc:
             logger.error(f"Groq health check failed: {exc}")
             return False
