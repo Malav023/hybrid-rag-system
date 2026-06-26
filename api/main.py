@@ -75,12 +75,17 @@ async def lifespan(app: FastAPI):
     logger.info("RAGPipeline ready")
 
     # Ollama health check — warn but don't crash; Ollama might start later
+    import os
+    groq_key_set = bool(os.environ.get("GROQ_API_KEY", ""))
+    logger.info(f"GROQ_API_KEY present in environment: {groq_key_set}")
+
     if rag_pipeline.llm.health_check():
-        logger.info("Ollama reachable ✓")
+        logger.info("LLM backend reachable ✓")
     else:
         logger.warning(
-            "Ollama is NOT reachable at startup. "
-            "Query endpoints will return 503 until Ollama is running."
+            "LLM backend health check failed. "
+            "If using Groq, verify GROQ_API_KEY is set correctly. "
+            "Query endpoints will return 503 until the backend is reachable."
         )
 
     # Attach to app.state for dependency injection
