@@ -1,38 +1,30 @@
 # Document Parsing
-PyMuPDF==1.24.0          # PDF (fastest)
-pdfplumber==0.11.0        # PDF tables
+PyMuPDF==1.24.0
+pdfplumber==0.11.0
 python-docx==1.1.0
 openpyxl==3.1.2
 python-pptx==0.6.23
 pandas==2.2.0
 beautifulsoup4==4.12.0
-fitz==0.0.1.dev2                                                                                                                       
-# Embedding's model
-sentence-transformers==3.0.0   # BAAI/bge-small-en-v1.5 (local, fast)
+
+# Embedding model
+sentence-transformers==3.0.0
 
 # Vector Store
-chromadb==0.5.0           # local dev → swap to Qdrant for prod
+chromadb==0.5.0
 
 # Sparse Search
 rank-bm25==0.2.2
 
-# Re-ranking
-sentence-transformers      # CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
-
-# LLM
-# ollama==0.2.0              # local 1.5B model
-
 # API
 fastapi==0.111.0
 uvicorn==0.30.0
-# pydantic-settings==2.0.0
 
 # Observability
-langfuse==2.0.1          # tracing & eval (free tier)
+langfuse==2.0.1
 
-#additional 
+# Additional
 lxml==5.2.0
 pydantic-settings==2.3.0
 python-dotenv==1.0.0
-
 huggingface_hub>=0.23.0
