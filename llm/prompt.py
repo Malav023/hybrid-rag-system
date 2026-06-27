@@ -1,15 +1,14 @@
 from typing import List, Dict, Any
 
-SYSTEM_PROMPT = """You are a strict document QA assistant. Your only job is to answer the question using the context provided. 
+SYSTEM_PROMPT = """You are a document QA assistant. Answer the user's question using ONLY the context provided below.
 
-STRICT RULES:
-- Answer in one or two sentences maximum.
-- Use ONLY information from the context below.
-- If the context does not contain the answer, reply with exactly the word: NOT_IN_CONTEXT
-- Do NOT generate more questions.
-- Do NOT repeat the context.
-- Do NOT add explanations.
-- Just answer."""
+RULES:
+1. Answer concisely — two to four sentences maximum.
+2. Use ONLY facts present in the provided context chunks.
+3. If the question asks what the documents are about, give a brief summary of the topics covered in the context.
+4. If the context genuinely does not contain enough information to answer, reply with exactly: NOT_IN_CONTEXT
+5. Do NOT invent facts, repeat the context verbatim, or generate follow-up questions.
+6. Do NOT include preamble like "Based on the context..." — go straight to the answer."""
 
 
 def build_context_block(chunks: List[Dict[str, Any]]) -> str:
@@ -41,19 +40,17 @@ def build_context_block(chunks: List[Dict[str, Any]]) -> str:
 def build_messages(query: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     context_block = build_context_block(chunks)
 
-    # For Zephyr and similar models, fold system prompt into user turn
-    # This prevents the model from treating the exchange as a few-shot template
-    combined_user_message = f"""{SYSTEM_PROMPT}
+    user_content = f"""{SYSTEM_PROMPT}
 
+---
 CONTEXT:
 {context_block}
+---
 
 QUESTION: {query}
 
-ANSWER (one or two sentences only, or NOT_IN_CONTEXT):"""
+ANSWER:"""
 
     return [
-        {"role": "user", "content": combined_user_message},
-        # Prime the assistant turn so model completes from here, not generates Q&A
-        {"role": "assistant", "content": ""},
+        {"role": "user", "content": user_content},
     ]
