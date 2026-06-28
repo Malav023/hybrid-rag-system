@@ -1,0 +1,1281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG Search — Document Intelligence</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f172a;
+    --panel: #ffffff;
+    --accent: #6366f1;
+    --accent-hover: #4f46e5;
+    --accent-light: #eef2ff;
+    --muted: #94a3b8;
+    --muted-light: #f1f5f9;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --text-light: #475569;
+    --error-bg: #fef2f2;
+    --error-border: #fca5a5;
+    --error-text: #991b1b;
+    --radius: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.06);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    --drawer-width: 320px;
+  }
+
+  html { font-size: 15px; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+    opacity: 0;
+    animation: fadeIn 0.35s ease forwards;
+  }
+
+  @keyframes fadeIn { to { opacity: 1; } }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .app {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .topbar {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    height: 52px;
+    background: var(--bg);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .topbar-title {
+    font-size: 13px;
+    font-variant: small-caps;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .hamburger {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .hamburger span {
+    display: block;
+    width: 20px;
+    height: 2px;
+    background: #fff;
+    border-radius: 2px;
+    transition: background 0.2s;
+  }
+  .hamburger:hover span { background: var(--accent); }
+
+  .overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 40;
+  }
+  .overlay.open { display: block; }
+
+  .left-panel {
+    width: 30%;
+    min-width: 260px;
+    max-width: 340px;
+    height: 100vh;
+    background: var(--panel);
+    box-shadow: 2px 0 8px rgba(0,0,0,0.12);
+    overflow-y: auto;
+    flex-shrink: 0;
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .left-panel::-webkit-scrollbar { width: 4px; }
+  .left-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .right-panel {
+    flex: 1;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.1) transparent;
+  }
+  .right-panel::-webkit-scrollbar { width: 4px; }
+  .right-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+
+  .panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .app-title {
+    font-size: 13px;
+    font-variant: small-caps;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .app-subtitle {
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #94a3b8;
+    margin-top: 4px;
+    flex-shrink: 0;
+    cursor: default;
+    position: relative;
+  }
+  .status-dot[data-status="ok"] { background: #22c55e; }
+  .status-dot[data-status="degraded"] { background: #eab308; }
+  .status-dot[title]:hover::after {
+    content: attr(title);
+    position: absolute;
+    right: 12px;
+    top: -2px;
+    background: var(--text);
+    color: #fff;
+    font-size: 11px;
+    padding: 3px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 18px 0;
+  }
+
+  .section-label {
+    font-size: 11px;
+    font-variant: small-caps;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+
+  .config-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .config-label {
+    font-size: 11.5px;
+    color: var(--text-light);
+    font-weight: 500;
+  }
+  .input {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--text);
+    background: #fff;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+  }
+  .input::placeholder { color: var(--muted); }
+  .input[type="number"] { max-width: 80px; }
+
+  .drop-zone {
+    border: 1.5px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 18px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    margin-bottom: 10px;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: var(--accent-light);
+  }
+  .drop-zone input[type="file"] { display: none; }
+  .drop-zone-icon {
+    width: 28px;
+    height: 28px;
+    margin: 0 auto 8px;
+    color: var(--muted);
+  }
+  .drop-zone-text {
+    font-size: 12.5px;
+    color: var(--text-light);
+    margin-bottom: 4px;
+  }
+  .drop-zone-text strong { color: var(--accent); font-weight: 600; }
+  .drop-zone-formats {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .selected-file {
+    font-size: 12px;
+    color: var(--text);
+    background: var(--muted-light);
+    border-radius: 5px;
+    padding: 5px 8px;
+    margin-bottom: 10px;
+    display: none;
+    align-items: center;
+    gap: 6px;
+  }
+  .selected-file.visible { display: flex; }
+  .selected-file-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .selected-file-clear {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+    flex-shrink: 0;
+  }
+  .selected-file-clear:hover { color: var(--error-text); }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: none;
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s, box-shadow 0.15s;
+    line-height: 1.4;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: var(--shadow-sm);
+  }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+  .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+  .btn-full { width: 100%; }
+
+  .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+
+  .upload-status {
+    font-size: 12px;
+    border-radius: 5px;
+    padding: 8px 10px;
+    margin-top: 8px;
+    display: none;
+  }
+  .upload-status.success {
+    display: block;
+    background: #f0fdf4;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+  }
+  .upload-status.error {
+    display: block;
+    background: var(--error-bg);
+    color: var(--error-text);
+    border: 1px solid var(--error-border);
+  }
+
+  .indexed-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .indexed-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--muted-light);
+    border-radius: 5px;
+    padding: 6px 10px;
+    gap: 8px;
+  }
+  .indexed-name {
+    font-size: 12px;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+  .indexed-badge {
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--border);
+    border-radius: 10px;
+    padding: 1px 7px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .indexed-empty {
+    font-size: 12px;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  .collapsible-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+  }
+  .collapsible-chevron {
+    width: 16px;
+    height: 16px;
+    color: var(--muted);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+  }
+  .collapsible-header.open .collapsible-chevron {
+    transform: rotate(180deg);
+  }
+  .collapsible-body {
+    display: none;
+    padding-top: 12px;
+  }
+  .collapsible-body.open { display: block; }
+  .settings-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+  .settings-row:last-child { margin-bottom: 0; }
+
+  .query-card {
+    background: var(--panel);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 20px;
+  }
+  .query-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .query-title {
+    font-size: 11px;
+    font-variant: small-caps;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .char-count {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .char-count.warn { color: #f59e0b; }
+  .char-count.over { color: var(--error-text); }
+
+  .textarea {
+    width: 100%;
+    min-height: 120px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--text);
+    background: #fff;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    line-height: 1.65;
+  }
+  .textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+  }
+  .textarea::placeholder { color: var(--muted); }
+  .textarea.drag-target { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+
+  .query-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 12px;
+  }
+
+  .error-card {
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    color: var(--error-text);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    font-size: 13px;
+    display: none;
+    animation: fadeUp 0.2s ease;
+  }
+  .error-card.visible { display: block; }
+
+  .answer-area {
+    display: none;
+    flex-direction: column;
+    gap: 14px;
+    animation: fadeUp 0.25s ease;
+  }
+  .answer-area.visible { display: flex; }
+
+  .answer-card {
+    background: var(--panel);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 20px;
+    position: relative;
+  }
+  .answer-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .answer-label {
+    font-size: 11px;
+    font-variant: small-caps;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .grounded-badge {
+    font-size: 11px;
+    padding: 2px 9px;
+    border-radius: 10px;
+    font-weight: 500;
+  }
+  .grounded-badge.yes {
+    background: #f0fdf4;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+  }
+  .grounded-badge.no {
+    background: #fff7ed;
+    color: #9a3412;
+    border: 1px solid #fed7aa;
+  }
+
+  .answer-text {
+    font-size: 14.5px;
+    line-height: 1.75;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .answer-text.not-found {
+    color: var(--muted);
+    font-style: italic;
+  }
+  .cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    background: var(--accent);
+    margin-left: 1px;
+    vertical-align: text-bottom;
+    animation: blink 0.9s step-end infinite;
+  }
+
+  .sources-section {
+    display: none;
+    animation: fadeUp 0.3s ease;
+  }
+  .sources-section.visible { display: block; }
+  .sources-label {
+    font-size: 11px;
+    font-variant: small-caps;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .source-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .source-pill {
+    font-size: 12px;
+    background: var(--accent-light);
+    color: var(--accent);
+    border: 1px solid rgba(99,102,241,0.2);
+    border-radius: 100px;
+    padding: 3px 11px;
+    font-weight: 500;
+  }
+
+  .retrieval-section {
+    display: none;
+    animation: fadeUp 0.35s ease;
+  }
+  .retrieval-section.visible { display: block; }
+  .retrieval-collapsible-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+    background: var(--panel);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 12px 16px;
+  }
+  .retrieval-collapsible-header:hover { background: var(--muted-light); }
+  .retrieval-title {
+    font-size: 11px;
+    font-variant: small-caps;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .retrieval-body {
+    display: none;
+    background: var(--panel);
+    border-radius: 0 0 var(--radius) var(--radius);
+    box-shadow: var(--shadow);
+    margin-top: -4px;
+    padding: 14px 16px 16px;
+    border-top: 1px solid var(--border);
+  }
+  .retrieval-body.open { display: block; }
+  .retrieval-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .retrieval-item-label {
+    font-size: 10.5px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+  }
+  .retrieval-item-value {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .retrieval-item-value.model-val {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-light);
+    word-break: break-all;
+  }
+
+  @media (max-width: 768px) {
+    .app {
+      flex-direction: column;
+      height: auto;
+      overflow: auto;
+    }
+    .topbar { display: flex; }
+    .left-panel {
+      position: fixed;
+      left: -100%;
+      top: 0;
+      height: 100%;
+      z-index: 50;
+      width: var(--drawer-width);
+      max-width: 90vw;
+      transition: left 0.25s ease;
+      box-shadow: 4px 0 20px rgba(0,0,0,0.25);
+    }
+    .left-panel.open { left: 0; }
+    .right-panel {
+      height: auto;
+      overflow: visible;
+      padding: 16px;
+    }
+    .retrieval-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  @media (min-width: 769px) {
+    .topbar { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- MOBILE TOP BAR -->
+<div class="topbar">
+  <span class="topbar-title">RAG Search</span>
+  <button class="hamburger" id="hamburgerBtn" aria-label="Open menu">
+    <span></span><span></span><span></span>
+  </button>
+</div>
+
+<!-- DRAWER OVERLAY -->
+<div class="overlay" id="overlay"></div>
+
+<div class="app">
+
+  <!-- LEFT PANEL -->
+  <div class="left-panel" id="leftPanel">
+
+    <div class="panel-header">
+      <div class="panel-header-text">
+        <div class="app-title">RAG Search</div>
+        <div class="app-subtitle">Document Intelligence API</div>
+      </div>
+      <div class="status-dot" id="statusDot" title="Checking..."></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Connection: Base URL only, API key removed -->
+    <div class="section-label">Connection</div>
+    <div class="config-group">
+      <label class="config-label" for="baseUrl">Base URL</label>
+      <input class="input" type="url" id="baseUrl" value="https://malav01-hybrid-rag-system.hf.space" placeholder="https://...">
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Upload -->
+    <div class="section-label">Upload Document</div>
+    <div class="drop-zone" id="dropZone" role="button" tabindex="0" aria-label="Upload file">
+      <input type="file" id="fileInput" accept=".pdf,.docx,.xlsx,.csv,.pptx,.html,.txt,.md">
+      <svg class="drop-zone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 9l5-5 5 5M12 4v12"/>
+      </svg>
+      <div class="drop-zone-text">Drop file here or <strong>click to browse</strong></div>
+      <div class="drop-zone-formats">PDF, DOCX, XLSX, CSV, PPTX, HTML, TXT, MD</div>
+    </div>
+    <div class="selected-file" id="selectedFile">
+      <span class="selected-file-name" id="selectedFileName"></span>
+      <button class="selected-file-clear" id="clearFile" title="Remove">&#x2715;</button>
+    </div>
+    <button class="btn btn-primary btn-full" id="uploadBtn" disabled>
+      <span id="uploadBtnText">Select a file to upload</span>
+    </button>
+    <div class="upload-status" id="uploadStatus"></div>
+
+    <div class="divider"></div>
+
+    <!-- Indexed Docs -->
+    <div class="section-label">Indexed Documents</div>
+    <div class="indexed-list" id="indexedList">
+      <div class="indexed-empty" id="indexedEmpty">No documents indexed yet.</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Settings -->
+    <div class="collapsible-header" id="settingsToggle">
+      <div class="section-label" style="margin:0">Settings</div>
+      <svg class="collapsible-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="6 9 12 15 18 9"/>
+      </svg>
+    </div>
+    <div class="collapsible-body" id="settingsBody">
+      <div class="settings-row">
+        <label class="config-label" for="topKRetrieve">Top K Retrieve</label>
+        <input class="input" type="number" id="topKRetrieve" value="15" min="1" max="100">
+      </div>
+      <div class="settings-row">
+        <label class="config-label" for="topKRerank">Top K Rerank</label>
+        <input class="input" type="number" id="topKRerank" value="5" min="1" max="20">
+      </div>
+      <div class="settings-row">
+        <label class="config-label" for="fileTypeFilter">File Type Filter</label>
+        <input class="input" type="text" id="fileTypeFilter" placeholder="e.g. pdf (optional)">
+      </div>
+    </div>
+
+  </div>
+  <!-- END LEFT PANEL -->
+
+  <!-- RIGHT PANEL -->
+  <div class="right-panel" id="rightPanel">
+
+    <div class="query-card">
+      <div class="query-header">
+        <div class="query-title">Question</div>
+        <div class="char-count" id="charCount">0 / 2000</div>
+      </div>
+      <textarea
+        class="textarea"
+        id="queryInput"
+        placeholder="Ask a question about your documents..."
+        maxlength="2000"
+        rows="5"
+      ></textarea>
+      <div class="query-actions">
+        <button class="btn btn-primary" id="searchBtn" style="min-width:110px">
+          <span id="searchBtnText">Search</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="error-card" id="errorCard"></div>
+
+    <div class="answer-area" id="answerArea">
+
+      <div class="answer-card">
+        <div class="answer-label-row">
+          <div class="answer-label">Answer</div>
+          <div class="grounded-badge" id="groundedBadge"></div>
+        </div>
+        <div class="answer-text" id="answerText"></div>
+      </div>
+
+      <div class="sources-section" id="sourcesSection">
+        <div class="sources-label">Sources</div>
+        <div class="source-pills" id="sourcePills"></div>
+      </div>
+
+      <div class="retrieval-section" id="retrievalSection">
+        <div class="retrieval-collapsible-header" id="retrievalToggle">
+          <div class="retrieval-title">Retrieval Details</div>
+          <svg class="collapsible-chevron" id="retrievalChevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </div>
+        <div class="retrieval-body" id="retrievalBody">
+          <div class="retrieval-grid">
+            <div class="retrieval-item">
+              <div class="retrieval-item-label">Candidates</div>
+              <div class="retrieval-item-value" id="rCandidates">—</div>
+            </div>
+            <div class="retrieval-item">
+              <div class="retrieval-item-label">Chunks to LLM</div>
+              <div class="retrieval-item-value" id="rChunks">—</div>
+            </div>
+            <div class="retrieval-item">
+              <div class="retrieval-item-label">Model</div>
+              <div class="retrieval-item-value model-val" id="rModel">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+  <!-- END RIGHT PANEL -->
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── DOM refs ─────────────────────────────────────────
+  const $ = id => document.getElementById(id);
+  const baseUrlInput     = $('baseUrl');
+  const statusDot        = $('statusDot');
+  const dropZone         = $('dropZone');
+  const fileInput        = $('fileInput');
+  const selectedFile     = $('selectedFile');
+  const selectedName     = $('selectedFileName');
+  const clearFileBtn     = $('clearFile');
+  const uploadBtn        = $('uploadBtn');
+  const uploadBtnText    = $('uploadBtnText');
+  const uploadStatus     = $('uploadStatus');
+  const indexedList      = $('indexedList');
+  const indexedEmpty     = $('indexedEmpty');
+  const settingsToggle   = $('settingsToggle');
+  const settingsBody     = $('settingsBody');
+  const topKRetrieve     = $('topKRetrieve');
+  const topKRerank       = $('topKRerank');
+  const fileTypeFilter   = $('fileTypeFilter');
+  const queryInput       = $('queryInput');
+  const charCount        = $('charCount');
+  const searchBtn        = $('searchBtn');
+  const searchBtnText    = $('searchBtnText');
+  const errorCard        = $('errorCard');
+  const answerArea       = $('answerArea');
+  const answerText       = $('answerText');
+  const groundedBadge    = $('groundedBadge');
+  const sourcesSection   = $('sourcesSection');
+  const sourcePills      = $('sourcePills');
+  const retrievalSection = $('retrievalSection');
+  const retrievalToggle  = $('retrievalToggle');
+  const retrievalBody    = $('retrievalBody');
+  const retrievalChevron = $('retrievalChevron');
+  const rCandidates      = $('rCandidates');
+  const rChunks          = $('rChunks');
+  const rModel           = $('rModel');
+  const hamburgerBtn     = $('hamburgerBtn');
+  const leftPanel        = $('leftPanel');
+  const overlay          = $('overlay');
+  const rightPanel       = $('rightPanel');
+
+  // ── State ─────────────────────────────────────────────
+  let selectedFileObj   = null;
+  let isUploading       = false;
+  let isSearching       = false;
+  let streamTimer       = null;
+  let errorDismissTimer = null;
+  let healthInterval    = null;
+
+  // ── localStorage (URL only — no API key) ─────────────
+  const LS_URL = 'rag_base_url';
+
+  function loadPersisted() {
+    const savedUrl = localStorage.getItem(LS_URL);
+    if (savedUrl) baseUrlInput.value = savedUrl;
+  }
+
+  baseUrlInput.addEventListener('change', () => {
+    localStorage.setItem(LS_URL, baseUrlInput.value.trim());
+    startHealthPolling();
+  });
+
+  // ── Health polling ────────────────────────────────────
+  async function checkHealth() {
+    const base = baseUrlInput.value.trim().replace(/\/$/, '');
+    try {
+      const resp = await fetch(base + '/health', { signal: AbortSignal.timeout(8000) });
+      if (!resp.ok) throw new Error('non-ok');
+      const data = await resp.json();
+      if (data.status === 'ok') {
+        statusDot.setAttribute('data-status', 'ok');
+        statusDot.title = 'System healthy';
+      } else {
+        statusDot.setAttribute('data-status', 'degraded');
+        statusDot.title = 'System degraded';
+      }
+    } catch {
+      statusDot.removeAttribute('data-status');
+      statusDot.title = 'Unreachable';
+    }
+  }
+
+  function startHealthPolling() {
+    checkHealth();
+    if (healthInterval) clearInterval(healthInterval);
+    healthInterval = setInterval(checkHealth, 30000);
+  }
+
+  // ── Mobile drawer ─────────────────────────────────────
+  function openDrawer() {
+    leftPanel.classList.add('open');
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeDrawer() {
+    leftPanel.classList.remove('open');
+    overlay.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+  hamburgerBtn.addEventListener('click', openDrawer);
+  overlay.addEventListener('click', closeDrawer);
+
+  // ── Settings collapsible ──────────────────────────────
+  settingsToggle.addEventListener('click', () => {
+    const open = settingsBody.classList.toggle('open');
+    settingsToggle.classList.toggle('open', open);
+  });
+
+  // ── Retrieval collapsible ─────────────────────────────
+  retrievalToggle.addEventListener('click', () => {
+    const open = retrievalBody.classList.toggle('open');
+    retrievalChevron.style.transform = open ? 'rotate(180deg)' : '';
+  });
+
+  // ── File selection ────────────────────────────────────
+  function setFile(file) {
+    selectedFileObj = file;
+    selectedName.textContent = file.name;
+    selectedFile.classList.add('visible');
+    uploadBtn.disabled = false;
+    uploadBtnText.textContent = 'Upload Document';
+    hideUploadStatus();
+  }
+
+  function clearFile() {
+    selectedFileObj = null;
+    fileInput.value = '';
+    selectedFile.classList.remove('visible');
+    uploadBtn.disabled = true;
+    uploadBtnText.textContent = 'Select a file to upload';
+    hideUploadStatus();
+  }
+
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) setFile(fileInput.files[0]);
+  });
+  clearFileBtn.addEventListener('click', clearFile);
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+  });
+
+  rightPanel.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.classList.add('drag-over');
+    queryInput.classList.add('drag-target');
+  });
+  rightPanel.addEventListener('dragleave', e => {
+    if (!rightPanel.contains(e.relatedTarget)) {
+      dropZone.classList.remove('drag-over');
+      queryInput.classList.remove('drag-target');
+    }
+  });
+  rightPanel.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    queryInput.classList.remove('drag-target');
+    if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+  });
+
+  // ── Upload status helpers ─────────────────────────────
+  function showUploadStatus(msg, type) {
+    uploadStatus.textContent = msg;
+    uploadStatus.className = 'upload-status ' + type;
+  }
+  function hideUploadStatus() {
+    uploadStatus.className = 'upload-status';
+  }
+
+  // ── Upload (async with job polling) ──────────────────
+  uploadBtn.addEventListener('click', async () => {
+    if (!selectedFileObj || isUploading) return;
+    const base = baseUrlInput.value.trim().replace(/\/$/, '');
+    hideError();
+    hideUploadStatus();
+    isUploading = true;
+    uploadBtn.disabled = true;
+    uploadBtnText.innerHTML = '<span class="spinner"></span>Uploading...';
+
+    const form = new FormData();
+    form.append('file', selectedFileObj);
+
+    try {
+      // Step 1: POST file, get job_id back immediately
+      const resp = await fetch(base + '/api/v1/ingest/', {
+        method: 'POST',
+        body: form,
+        signal: AbortSignal.timeout(30000)
+      });
+
+      const data = await safeJson(resp);
+      if (!resp.ok) throw { status: resp.status, data };
+
+      const jobId = data.job_id;
+      if (!jobId) throw new Error('No job_id returned from server.');
+
+      uploadBtnText.innerHTML = '<span class="spinner"></span>Processing...';
+
+      // Step 2: poll until done or error
+      const result = await pollJob(base, jobId);
+
+      showUploadStatus(
+        `Indexed ${result.chunks_indexed} chunk${result.chunks_indexed !== 1 ? 's' : ''} from "${result.source_file}"`,
+        'success'
+      );
+      addIndexedDoc(result.source_file, result.chunks_indexed);
+      clearFile();
+    } catch (err) {
+      showUploadStatus(uploadErrorMessage(err), 'error');
+    } finally {
+      isUploading = false;
+      uploadBtn.disabled = !selectedFileObj;
+      uploadBtnText.textContent = selectedFileObj ? 'Upload Document' : 'Select a file to upload';
+    }
+  });
+
+  // ── Job polling ───────────────────────────────────────
+  async function pollJob(base, jobId) {
+    const MAX_WAIT_MS = 10 * 60 * 1000;  // 10 min — enough for 700+ page PDFs
+    const INTERVAL_MS = 3000;
+    const started = Date.now();
+
+    while (Date.now() - started < MAX_WAIT_MS) {
+      await new Promise(r => setTimeout(r, INTERVAL_MS));
+      let data;
+      try {
+        const resp = await fetch(base + '/api/v1/ingest/status/' + jobId, {
+          signal: AbortSignal.timeout(10000)
+        });
+        data = await safeJson(resp);
+      } catch {
+        // transient network blip — keep polling
+        continue;
+      }
+      if (data.status === 'done') return data.result;
+      if (data.status === 'error') throw new Error(data.error || 'Ingestion failed on server.');
+      // status is 'queued' or 'processing' — keep waiting
+    }
+    throw new Error('Timed out waiting for ingestion. The file may still be processing on the server.');
+  }
+
+  function uploadErrorMessage(err) {
+    if (err && err.status) {
+      if (err.status === 413) return 'File too large to upload (max 100 MB).';
+      if (err.status === 415) return 'Unsupported file type.';
+      if (err.status === 503) return 'Server unavailable. Try again shortly.';
+      return `Upload failed (${err.status}). Please try again.`;
+    }
+    if (err instanceof TypeError) return 'Network error. Check your connection and Base URL.';
+    return err.message || 'Upload failed. Please try again.';
+  }
+
+  // ── Indexed docs list ─────────────────────────────────
+  function addIndexedDoc(filename, chunks) {
+    indexedEmpty.style.display = 'none';
+    const item = document.createElement('div');
+    item.className = 'indexed-item';
+    item.innerHTML = `
+      <span class="indexed-name" title="${esc(filename)}">${esc(filename)}</span>
+      <span class="indexed-badge">${chunks} chunks</span>
+    `;
+    indexedList.appendChild(item);
+  }
+
+  // ── Char count ────────────────────────────────────────
+  queryInput.addEventListener('input', () => {
+    const len = queryInput.value.length;
+    charCount.textContent = `${len} / 2000`;
+    charCount.className = 'char-count' + (len > 1900 ? ' over' : len > 1600 ? ' warn' : '');
+    if (answerArea.classList.contains('visible')) {
+      answerArea.classList.remove('visible');
+      sourcesSection.classList.remove('visible');
+      retrievalSection.classList.remove('visible');
+    }
+    hideError();
+  });
+
+  queryInput.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      doSearch();
+    }
+  });
+
+  searchBtn.addEventListener('click', doSearch);
+
+  // ── Search ────────────────────────────────────────────
+  async function doSearch() {
+    if (isSearching) return;
+    const q = queryInput.value.trim();
+    if (!q) { showError('Please enter a question.'); return; }
+    if (q.length > 2000) { showError('Question is too long (max 2000 characters).'); return; }
+
+    const base = baseUrlInput.value.trim().replace(/\/$/, '');
+    hideError();
+    clearStream();
+
+    isSearching = true;
+    searchBtn.disabled = true;
+    searchBtnText.innerHTML = '<span class="spinner"></span>Generating...';
+
+    const body = {
+      question: q,
+      top_k_retrieve: parseInt(topKRetrieve.value) || 15,
+      top_k_rerank:   parseInt(topKRerank.value)   || 5
+    };
+    const ft = fileTypeFilter.value.trim();
+    if (ft) body.filters = { file_type: ft };
+
+    try {
+      const resp = await fetch(base + '/api/v1/query/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(120000)
+      });
+
+      const data = await safeJson(resp);
+      if (!resp.ok) throw { status: resp.status, data };
+
+      renderAnswer(data);
+    } catch (err) {
+      showError(queryErrorMessage(err));
+    } finally {
+      isSearching = false;
+      searchBtn.disabled = false;
+      searchBtnText.textContent = 'Search';
+    }
+  }
+
+  function queryErrorMessage(err) {
+    if (err && err.status) {
+      if (err.status === 503) return 'LLM service is currently unavailable. Please try again later.';
+      if (err.status === 500) return 'Server error. Please try again.';
+      return `Request failed (${err.status}). Please try again.`;
+    }
+    if (err instanceof TypeError) return 'Network error. Check your connection and Base URL.';
+    return 'An unexpected error occurred. Please try again.';
+  }
+
+  // ── Render answer ─────────────────────────────────────
+  function renderAnswer(data) {
+    const answer = (data.answer || '').trim();
+    const notFound = answer === 'NOT_IN_CONTEXT' || !answer;
+
+    answerArea.classList.add('visible');
+    answerText.innerHTML = '';
+    sourcesSection.classList.remove('visible');
+    retrievalSection.classList.remove('visible');
+
+    if (notFound) {
+      groundedBadge.textContent = '';
+      groundedBadge.className = 'grounded-badge';
+    } else if (data.grounded === true) {
+      groundedBadge.textContent = 'Grounded';
+      groundedBadge.className = 'grounded-badge yes';
+    } else {
+      groundedBadge.textContent = 'Not grounded';
+      groundedBadge.className = 'grounded-badge no';
+    }
+
+    if (notFound) {
+      answerText.className = 'answer-text not-found';
+      answerText.textContent = 'No relevant information found in the indexed documents.';
+      showPostAnswer(data);
+      return;
+    }
+
+    answerText.className = 'answer-text';
+    streamText(answer, () => showPostAnswer(data));
+  }
+
+  // ── Streaming text effect ─────────────────────────────
+  function streamText(text, onDone) {
+    const CHARS_PER_SEC = 20;
+    const INTERVAL_MS = 1000 / CHARS_PER_SEC;
+    let idx = 0;
+    const cursor = document.createElement('span');
+    cursor.className = 'cursor';
+    answerText.appendChild(cursor);
+
+    if (streamTimer) clearInterval(streamTimer);
+
+    streamTimer = setInterval(() => {
+      if (idx >= text.length) {
+        clearInterval(streamTimer);
+        streamTimer = null;
+        cursor.remove();
+        if (onDone) onDone();
+        return;
+      }
+      cursor.insertAdjacentText('beforebegin', text.slice(idx, idx + 1));
+      idx++;
+    }, INTERVAL_MS);
+  }
+
+  function clearStream() {
+    if (streamTimer) {
+      clearInterval(streamTimer);
+      streamTimer = null;
+    }
+  }
+
+  function showPostAnswer(data) {
+    if (data.sources && data.sources.length > 0) {
+      sourcePills.innerHTML = '';
+      data.sources.forEach(src => {
+        const pill = document.createElement('span');
+        pill.className = 'source-pill';
+        pill.textContent = src;
+        sourcePills.appendChild(pill);
+      });
+      sourcesSection.classList.add('visible');
+    }
+
+    const r = data.retrieval || {};
+    rCandidates.textContent = r.candidates_retrieved ?? '—';
+    rChunks.textContent     = data.chunks_used ?? r.chunks_to_llm ?? '—';
+    rModel.textContent      = data.model || '—';
+    retrievalSection.classList.add('visible');
+  }
+
+  // ── Error helpers ─────────────────────────────────────
+  function showError(msg) {
+    if (errorDismissTimer) clearTimeout(errorDismissTimer);
+    errorCard.textContent = msg;
+    errorCard.classList.add('visible');
+    errorDismissTimer = setTimeout(hideError, 6000);
+  }
+  function hideError() {
+    errorCard.classList.remove('visible');
+    if (errorDismissTimer) clearTimeout(errorDismissTimer);
+  }
+
+  // ── Utilities ─────────────────────────────────────────
+  function esc(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  async function safeJson(resp) {
+    try { return await resp.json(); } catch { return {}; }
+  }
+
+  // ── Init ──────────────────────────────────────────────
+  loadPersisted();
+  startHealthPolling();
+
+})();
+</script>
+</body>
+</html>
